@@ -1,96 +1,98 @@
 import React, { useState } from "react";
 import * as XLSX from "xlsx";
-import { 
+import {
   Button,
   Card,
-  TextField,
+  Typography,
+  Box,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Paper, Typography
+  Paper,
+  TextField,
+  IconButton,
+  styled
 } from "@mui/material";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import DeleteIcon from "@mui/icons-material/Delete";
+import AddIcon from "@mui/icons-material/Add";
+import CheckIcon from "@mui/icons-material/Check";
 
-export default function PayrollForm() {
+const VisuallyHiddenInput = styled("input")({
+  clip: "rect(0 0 0 0)",
+  clipPath: "inset(50%)",
+  height: 1,
+  overflow: "hidden",
+  position: "absolute",
+  bottom: 0,
+  left: 0,
+  whiteSpace: "nowrap",
+  width: 1
+});
+
+export default function 
+() {
   const [employees, setEmployees] = useState([]);
+  const [batchId, setBatchId] = useState(() => 'BATCH-' + Date.now().toString(36).toUpperCase());
   const [errors, setErrors] = useState([]);
 
-  const getEmpErrors = (emp) => {
-    const empErrors = {};
-    if (!emp.id) empErrors.id = "Employee ID is required";
-    if (!emp.name || !/^[A-Za-z ]+$/.test(emp.name)) empErrors.name = "Name must contain only alphabets";
-    if (!emp.salary) empErrors.salary = "Salary is required";
-    if (!emp.bank || !/^\d{7}$/.test(emp.bank)) empErrors.bank = "Bank ID must be exactly 7 digits";
-    if (!emp.date || !/^\d{4}-\d{2}-\d{2}$/.test(emp.date)) {
-      empErrors.date = "Date must be in yyyy-mm-dd format";
-    } else {
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const dateValue = new Date(emp.date);
-      if (isNaN(dateValue.getTime())) {
-        empErrors.date = "Invalid date";
-      } else if (dateValue < today) {
-        empErrors.date = "Date cannot be in the past";
-      }
-    }
-    return empErrors;
+  // Central column definition for dynamic table
+  // Transaction ID generator function (replace with your own if needed)
+  const generateTransactionId = () => {
+    return 'TXN-' + Math.random().toString(36).substr(2, 9).toUpperCase();
   };
 
-  const normalizeDate = (value) => {
-    if (value === null || value === undefined || value === "") return "";
-    if (value instanceof Date && !isNaN(value)) return value.toISOString().slice(0, 10);
+  const columns = [
+    { key: "transactionId", label: "Transaction ID", placeholder: "Transaction ID" },
+    { key: "date", label: "Date" },
+    { key: "debitAccount", label: "Debit Account" },
+    { key: "creditAccount", label: "Credit Account" },
+    { key: "debitCurrency", label: "Debit Currency" },
+    { key: "debitAmount", label: "Debit Amount" },
+    { key: "creditCurrency", label: "Credit Currency" },
+    { key: "creditAmount", label: "Credit Amount" },
+    { key: "employeeName", label: "Employee Name" },
+    { key: "bankID", label: "Bank ID" },
+    { key: "remarks", label: "Remarks (optional)" }
+  ];
 
-    const str = String(value).trim();
-    if (!str) return "";
-
-    const digits = str.replace(/\D/g, "");
-    if (digits.length === 8) return `${digits.slice(0,4)}-${digits.slice(4,6)}-${digits.slice(6,8)}`;
-
-    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-
-    const parsed = new Date(str);
-    if (!isNaN(parsed)) return parsed.toISOString().slice(0, 10);
-
-    return str;
-  };
-
-  const formatDateInput = (value) => {
-    const digits = String(value).replace(/\D/g, "").slice(0, 8);
-    if (digits.length <= 4) return digits;
-    if (digits.length <= 6) return `${digits.slice(0,4)}-${digits.slice(4)}`;
-    return `${digits.slice(0,4)}-${digits.slice(4,6)}-${digits.slice(6,8)}`;
+  const getToday = () => {
+    const today = new Date();
+    return today.toISOString().slice(0, 10);
   };
 
   const addRow = () => {
-    const newEmp = { id: "", name: "", salary: "", bank: "", date: "" };
-    setEmployees((prev) => [...prev, newEmp]);
-    setErrors((prev) => [...prev, getEmpErrors(newEmp)]);
+    const emptyRow = {};
+    columns.forEach((col) => {
+      if (col.key === "date") {
+        emptyRow[col.key] = getToday();
+      } else if (col.key === "transactionId") {
+        emptyRow[col.key] = generateTransactionId();
+      } else {
+        emptyRow[col.key] = "";
+      }
+    });
+    emptyRow.batchId = batchId;
+    setEmployees((prev) => [...prev, emptyRow]);
+    setErrors((prev) => [...prev, validateRow(emptyRow)]);
   };
 
   const updateEmployee = (index, field, value) => {
     const updated = [...employees];
-    let newValue = value;
-    if (field === "date") {
-      newValue = formatDateInput(value);
-    }
-    updated[index][field] = newValue;
+    updated[index][field] = value;
     setEmployees(updated);
-
     const newErrors = [...errors];
-    newErrors[index] = getEmpErrors(updated[index]);
+    newErrors[index] = validateRow(updated[index]);
     setErrors(newErrors);
-  };
-
-  const deleteRow = (index) => {
-    setEmployees((prev) => prev.filter((_, i) => i !== index));
-    setErrors((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const data = new Uint8Array(event.target.result);
@@ -98,21 +100,33 @@ export default function PayrollForm() {
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const parsedData = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-      const formattedData = parsedData.map((row) => ({
-        id: row.id || row.ID || "",
-        name: row.name || row.Name || "",
-        salary: row.salary || row.Salary || "",
-        bank: row.bank || row.Bank || "",
-        date: normalizeDate(row.date || row.Date || row.DateValue || ""),
-      }));
+      const formattedData = parsedData.map((row) => {
+        const obj = {};
+        columns.forEach((col) => {
+          if (col.key === "date") {
+            obj[col.key] = row[col.label] || row[col.key] || row[col.key.charAt(0).toUpperCase() + col.key.slice(1)] || getToday();
+          } else if (col.key === "transactionId") {
+            obj[col.key] = row[col.label] || row[col.key] || row[col.key.charAt(0).toUpperCase() + col.key.slice(1)] || generateTransactionId();
+          } else {
+            obj[col.key] = row[col.label] || row[col.key] || row[col.key.charAt(0).toUpperCase() + col.key.slice(1)] || "";
+          }
+        });
+        obj.batchId = batchId;
+        return obj;
+      });
 
       setEmployees((prev) => {
         const newEmployees = [...prev, ...formattedData];
-        setErrors(newEmployees.map((emp) => getEmpErrors(emp)));
+        setErrors(newEmployees.map(validateRow));
         return newEmployees;
       });
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  const deleteRow = (index) => {
+    setEmployees((prev) => prev.filter((_, i) => i !== index));
+    setErrors((prev) => prev.filter((_, i) => i !== index));
   };
 
   const hasErrors = () => {
@@ -120,9 +134,7 @@ export default function PayrollForm() {
   };
 
   const processBatch = () => {
-    const allErrors = employees.map((emp) => getEmpErrors(emp));
-    setErrors(allErrors);
-    if (allErrors.some((e) => Object.keys(e).length > 0)) {
+    if (hasErrors()) {
       alert("Please fix validation errors before processing batch.");
       return;
     }
@@ -130,94 +142,138 @@ export default function PayrollForm() {
     alert("Batch processed successfully!");
   };
 
+  // Validation function for a row
+  function validateRow(row) {
+    const err = {};
+    // All fields except remarks are mandatory
+    columns.forEach((col) => {
+      if (col.key !== "remarks" && (!row[col.key] || row[col.key].toString().trim() === "")) {
+        err[col.key] = "Required";
+      }
+    });
+    // bank id: strictly 7 digits
+    if (row.bankID && !/^\d{7}$/.test(row.bankID)) {
+      err.bankID = "Bank ID must be exactly 7 digits";
+    }
+    // employee name: only alphabets
+    if (row.employeeName && !/^[A-Za-z ]+$/.test(row.employeeName)) {
+      err.employeeName = "Only alphabets allowed";
+    }
+    // debit/credit account: strictly 8 numeric
+    if (row.debitAccount && !/^\d{8}$/.test(row.debitAccount)) {
+      err.debitAccount = "Must be 8 digits";
+    }
+    if (row.creditAccount && !/^\d{8}$/.test(row.creditAccount)) {
+      err.creditAccount = "Must be 8 digits";
+    }
+    // debit/credit amount: numeric
+    if (row.debitAmount && isNaN(row.debitAmount)) {
+      err.debitAmount = "Must be numeric";
+    }
+    if (row.creditAmount && isNaN(row.creditAmount)) {
+      err.creditAmount = "Must be numeric";
+    }
+    // debit/credit currency: alphabets only
+    if (row.debitCurrency && !/^[A-Za-z]+$/.test(row.debitCurrency)) {
+      err.debitCurrency = "Alphabets only";
+    }
+    if (row.creditCurrency && !/^[A-Za-z]+$/.test(row.creditCurrency)) {
+      err.creditCurrency = "Alphabets only";
+    }
+    return err;
+  }
+
+  const logRows = () => {
+  employees.forEach((row, idx) => {
+    console.log(`Row ${idx + 1}:`);
+    Object.entries(row).forEach(([key, value]) => {
+      console.log(`  ${key}: ${value}`);
+    });
+  });
+};
+
   return (
-    <div style={{ padding: "20px" }}>
-      <Card elevation={3} style={{ padding: "20px" }}>
-        <Typography variant="h4" sx={{ mb:2, fontWeight:'bold', color:'primary.main' }}>Payroll Processing</Typography>
+    <div style={{ padding: 16 }}>
+      <Card elevation={3} style={{ padding: 12 }}>
+        <Typography variant="h4" sx={{ mb: 2, fontWeight: "bold", color: "primary.main", textAlign: 'center' }}>
+          Payroll Payments
+        </Typography>
 
-        <div style={{ marginBottom: "16px" }}>
-          <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} />
-        </div>
+        <Box display="flex" alignItems="center" justifyContent="space-between" gap={2} sx={{ mb: 2 }}>
+          <TextField
+            label="Batch ID"
+            variant="outlined"
+            size="small"
+            value={batchId}
+            onChange={e => setBatchId(e.target.value)}
+            sx={{ minWidth: 200 }}
+          />
+          <Box display="flex" gap={2}>
+            <Button
+              component="label"
+              variant="contained"
+              startIcon={<CloudUploadIcon />}
+              sx={{ maxHeight: 40 }}
+            >
+              Upload File
+              <VisuallyHiddenInput
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileUpload}
+              />
+            </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={addRow}
+              startIcon={<AddIcon />}
+              sx={{ maxHeight: 40 }}
+            >
+              Add Row
+            </Button>
+          </Box>
+        </Box>
 
-        <Button variant="contained" color="primary" onClick={addRow} style={{ marginBottom: "16px" }}>
-          Add Employee
-        </Button>
-
-        <TableContainer component={Paper} style={{ marginBottom: "16px" }}>
-          <Table>
+        <TableContainer component={Paper} style={{ marginBottom: "8px", overflowX: "auto", width: '100vw', maxWidth: '96vw', maxHeight: 400, overflowY: "auto" }}>
+          <Table style={{ minWidth: 100, width: '100%' }}>
             <TableHead>
               <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>Name</TableCell>
-                <TableCell>Salary</TableCell>
-                <TableCell>Bank ID</TableCell>
-                <TableCell>Date</TableCell>
+                {columns.map((col) => (
+                  <TableCell key={col.key}>{col.label}</TableCell>
+                ))}
                 <TableCell>Actions</TableCell>
               </TableRow>
             </TableHead>
+
             <TableBody>
               {employees.map((emp, index) => (
                 <TableRow key={index}>
-                  <TableCell>
-                    <TextField
-                      variant="outlined"
-                      size="small"
-                      placeholder="Enter Employee ID"
-                      value={emp.id || ""}
-                      onChange={(e) => updateEmployee(index, "id", e.target.value)}
-                      error={!!errors[index]?.id}
-                      helperText={errors[index]?.id}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <TextField
-                      variant="outlined"
-                      size="small"
-                      placeholder="Enter Full Name"
-                      value={emp.name || ""}
-                      onChange={(e) => updateEmployee(index, "name", e.target.value)}
-                      error={!!errors[index]?.name}
-                      helperText={errors[index]?.name}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <TextField
-                      type="number"
-                      variant="outlined"
-                      size="small"
-                      placeholder="Enter Salary (e.g. 50000)"
-                      value={emp.salary || ""}
-                      onChange={(e) => updateEmployee(index, "salary", e.target.value)}
-                      error={!!errors[index]?.salary}
-                      helperText={errors[index]?.salary}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <TextField
-                      variant="outlined"
-                      size="small"
-                      placeholder="Enter 7-digit Bank ID"
-                      value={emp.bank || ""}
-                      onChange={(e) => updateEmployee(index, "bank", e.target.value)}
-                      error={!!errors[index]?.bank}
-                      helperText={errors[index]?.bank}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <TextField
-                      variant="outlined"
-                      size="small"
-                      placeholder="Enter Date (yyyy-mm-dd)"
-                      value={emp.date || ""}
-                      onChange={(e) => updateEmployee(index, "date", e.target.value)}
-                      error={!!errors[index]?.date}
-                      helperText={errors[index]?.date}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="contained" color="error" onClick={() => deleteRow(index)}>
-                      Delete
-                    </Button>
+                  {columns.map((col) => (
+                    <TableCell key={col.key}>
+                      <TextField
+                        variant="outlined"
+                        size="small"
+                        placeholder={col.placeholder || col.label}
+                        value={emp[col.key]}
+                        onChange={(e) =>
+                          updateEmployee(index, col.key, e.target.value)
+                        }
+                        InputProps={col.key === "date" || col.key === "transactionId" ? { readOnly: true } : {}}
+                        error={!!errors[index]?.[col.key]}
+                        helperText={errors[index]?.[col.key]}
+                        fullWidth
+                        sx={{ minWidth: 100, p: 0.5}}
+                      />
+                    </TableCell>
+                  ))}
+                  <TableCell align="center">
+                    <IconButton
+                      aria-label="delete"
+                      color="error"
+                      onClick={() => deleteRow(index)}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))}
@@ -225,10 +281,26 @@ export default function PayrollForm() {
           </Table>
         </TableContainer>
 
-        <Button variant="contained" color="success" onClick={processBatch} disabled={hasErrors() || employees.length === 0}>
+        <Button
+          variant="contained"
+          color="success"
+          onClick={processBatch}
+          startIcon={<CheckIcon />}
+          disabled={hasErrors() || employees.length === 0}
+        >
           Process Batch
         </Button>
       </Card>
+
+    <Button
+  variant="outlined"
+  color="secondary"
+  onClick={logRows}
+  style={{ marginTop: 16, marginRight: 8 }}
+>
+  Log Rows
+</Button>
+
     </div>
   );
 }
