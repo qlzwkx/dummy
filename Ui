@@ -1,0 +1,119 @@
+import { renderHook, act } from '@testing-library/react';
+import { useGetSTConfirm } from './useGetSTConfirm';
+import { useCslPost } from 'sc-services';
+import { useSTStore } from '@/stores/useMFAStore';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+
+// 1. Mock the dependencies
+vi.mock('sc-services', () => ({
+  useApiPath: () => ({ getPath: vi.fn((_, path) => path) }),
+  useCslContext: () => ({ updateContext: vi.fn() }),
+  useCslPost: vi.fn(),
+}));
+
+vi.mock('@/stores/useMFAStore', () => ({
+  useSTStore: vi.fn(),
+}));
+
+vi.mock('@/hooks/useCslHeader', () => ({
+  useCslHeader: () => ({ getHeaderMap: vi.fn(() => ({})) }),
+}));
+
+vi.mock('@/utils/platform-util', () => ({
+  getClientType: vi.fn(() => 'MOCK_CLIENT'),
+}));
+
+describe('useGetSTConfirm', () => {
+  const mockHandleSuccess = vi.fn();
+  const mockHandleError = vi.fn();
+  const mockHandlePending = vi.fn();
+  const mockMutateAsync = vi.fn();
+  const mockSetErrorMsg = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    
+    // Mock Store implementation
+    (useSTStore as any).mockImplementation((selector: any) => {
+      const state = {
+        allData: { meta: { 'tx-ref-num': 'REF123' } },
+        setErrorMsg: mockSetErrorMsg,
+      };
+      return selector(state);
+    });
+
+    // Mock useCslPost implementation
+    (useCslPost as any).mockReturnValue({
+      mutateAsync: mockMutateAsync,
+      isLoading: false,
+    });
+  });
+
+  it('should call mutateAsync with correctly formatted form-data string', async () => {
+    const { result } = renderHook(() => useGetSTConfirm({
+      handleSuccess: mockHandleSuccess,
+      handleError: mockHandleError,
+      handlePending: mockHandlePending,
+    }));
+
+    await act(async () => {
+      await result.current.executeGetSTConfirm();
+    });
+
+    // Verify the data transformation logic (Object to URL-encoded string)
+    expect(mockMutateAsync).toHaveBeenCalledWith(
+      expect.stringContaining('transaction_ref_no=REF123')
+    );
+    expect(mockMutateAsync).toHaveBeenCalledWith(
+      expect.stringContaining('otp_type=ST_CHALLENGE_OTP')
+    );
+  });
+
+  it('should trigger handleError and set generic error on unknown failure', async () => {
+    // Setup useCslPost to simulate an error via the onError callback
+    (useCslPost as any).mockImplementation((config: any, callbacks: any) => {
+      return {
+        mutateAsync: async () => {
+          callbacks.onError({ response: { data: { error: 'UNKNOWN' } } });
+        },
+        isLoading: false,
+      };
+    });
+
+    const { result } = renderHook(() => useGetSTConfirm({
+      handleSuccess: mockHandleSuccess,
+      handleError: mockHandleError,
+      handlePending: mockHandlePending,
+    }));
+
+    await act(async () => {
+      await result.current.executeGetSTConfirm();
+    });
+
+    expect(mockSetErrorMsg).toHaveBeenCalledWith('messages.sc_generic_error');
+    expect(mockHandleError).toHaveBeenCalled();
+  });
+
+  it('should trigger handlePending when error status is PENDING', async () => {
+    (useCslPost as any).mockImplementation((config: any, callbacks: any) => {
+      return {
+        mutateAsync: async () => {
+          callbacks.onError({ response: { data: { error: 'PENDING' } } });
+        },
+        isLoading: false,
+      };
+    });
+
+    const { result } = renderHook(() => useGetSTConfirm({
+      handleSuccess: mockHandleSuccess,
+      handleError: mockHandleError,
+      handlePending: mockHandlePending,
+    }));
+
+    await act(async () => {
+      await result.current.executeGetSTConfirm();
+    });
+
+    expect(mockHandlePending).toHaveBeenCalled();
+  });
+});
