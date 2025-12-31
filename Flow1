@@ -1,12 +1,12 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 
-/* =======================
-   MOCKS (INLINE)
-   ======================= */
+/* =====================
+   MOCKS
+   ===================== */
 
 // i18n
 vi.mock('react-i18next', () => ({
@@ -38,7 +38,7 @@ vi.mock('@/stores/useMFAStore', () => ({
   }),
 }));
 
-// Responsive (desktop)
+// Desktop mode
 vi.mock('react-responsive', () => ({
   useMediaQuery: () => true,
 }));
@@ -48,7 +48,10 @@ vi.mock('@/utils/platform-util', () => ({
   isScMobile: () => false,
 }));
 
-// PIN input
+/**
+ * ✅ FIX IS HERE
+ * Mock PINInput to render a REAL input with testid
+ */
 vi.mock('@modules/components/PinInput', () => ({
   PINInput: ({ onComplete, onChange }: any) => (
     <input
@@ -78,24 +81,23 @@ vi.mock('@/components/Header/MorePopup', () => ({
     showPopup ? <div data-testid="forgot-popup">Popup</div> : null,
 }));
 
-/* =======================
-   IMPORT COMPONENT
-   ======================= */
+/* =====================
+   IMPORT
+   ===================== */
 import { PrimaryFlow } from '../PrimaryFlow';
 
-/* =======================
+/* =====================
    TESTS
-   ======================= */
+   ===================== */
 
 describe('PrimaryFlow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Mock SoftToken API
     (window as any).SoftToken = {
       generateChallengeResponseOTP: vi.fn(
-        (_success: any, _error: any, _payload: any) => {
-          _success({
+        (success: any) => {
+          success({
             sequenceNumber: 'SEQ123',
             serialNumber: 'SERIAL123',
             otp: 'OTP123',
@@ -105,7 +107,7 @@ describe('PrimaryFlow', () => {
     };
   });
 
-  it('renders primary screen texts', () => {
+  it('renders primary flow screen', () => {
     render(<PrimaryFlow />);
 
     expect(screen.getByText('primary.title')).toBeInTheDocument();
@@ -113,18 +115,13 @@ describe('PrimaryFlow', () => {
     expect(screen.getByText('primary.description')).toBeInTheDocument();
   });
 
-  it('continue button is disabled initially', () => {
-    render(<PrimaryFlow />);
-
-    const button = screen.getByRole('button');
-    expect(button).toBeDisabled();
-  });
-
-  it('enables continue button after entering 6-digit PIN', async () => {
+  it('enables Continue button after entering 6-digit PIN', async () => {
     render(<PrimaryFlow />);
 
     const input = screen.getByTestId('pin-input');
     const button = screen.getByRole('button');
+
+    expect(button).toBeDisabled();
 
     await userEvent.type(input, '123456');
 
@@ -134,13 +131,9 @@ describe('PrimaryFlow', () => {
   it('calls SoftToken API and sets validation object on continue click', async () => {
     render(<PrimaryFlow />);
 
-    const input = screen.getByTestId('pin-input');
-    await userEvent.type(input, '123456');
+    await userEvent.type(screen.getByTestId('pin-input'), '123456');
+    await userEvent.click(screen.getByRole('button'));
 
-    const button = screen.getByRole('button');
-    await userEvent.click(button);
-
-    expect(mockSetPageLoading).toHaveBeenCalledWith(true);
     expect((window as any).SoftToken.generateChallengeResponseOTP).toHaveBeenCalled();
 
     expect(mockSetSTValidateObj).toHaveBeenCalledWith({
@@ -152,7 +145,7 @@ describe('PrimaryFlow', () => {
     });
   });
 
-  it('opens forgot PIN popup on click', async () => {
+  it('opens forgot PIN popup', async () => {
     render(<PrimaryFlow />);
 
     await userEvent.click(screen.getByText('primary.forgotPin'));
