@@ -1,0 +1,162 @@
+import React from 'react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom';
+
+/* =======================
+   MOCKS (INLINE)
+   ======================= */
+
+// i18n
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
+
+// Store
+const mockSetPageLoading = vi.fn();
+const mockSetSTValidateObj = vi.fn();
+
+vi.mock('@/stores/useMFAStore', () => ({
+  useSTStore: () => ({
+    setErrorMsg: vi.fn(),
+    setShowErrorPopup: vi.fn(),
+    setErrorCode: vi.fn(),
+    setPageLoading: mockSetPageLoading,
+    setSTvalidateObj: mockSetSTValidateObj,
+    allData: {
+      meta: {
+        'tx-ref-num': 'TX123',
+        'random-num': 'RND123',
+        'challenge-code': 'CHALLENGE',
+      },
+    },
+    showErrorPopup: false,
+    stType: 'primary',
+  }),
+}));
+
+// Responsive (desktop)
+vi.mock('react-responsive', () => ({
+  useMediaQuery: () => true,
+}));
+
+// Platform util
+vi.mock('@/utils/platform-util', () => ({
+  isScMobile: () => false,
+}));
+
+// PIN input
+vi.mock('@modules/components/PinInput', () => ({
+  PINInput: ({ onComplete, onChange }: any) => (
+    <input
+      data-testid="pin-input"
+      onChange={(e) => {
+        onChange(e);
+        if (e.target.value.length === 6) {
+          onComplete(e.target.value);
+        }
+      }}
+    />
+  ),
+}));
+
+// Proceed button
+vi.mock('sc-nitro-ui-web', () => ({
+  ProceedButton: ({ disabled, onClick, children }: any) => (
+    <button disabled={disabled} onClick={onClick}>
+      {children}
+    </button>
+  ),
+}));
+
+// Popup
+vi.mock('@/components/Header/MorePopup', () => ({
+  MorePopup: ({ showPopup }: any) =>
+    showPopup ? <div data-testid="forgot-popup">Popup</div> : null,
+}));
+
+/* =======================
+   IMPORT COMPONENT
+   ======================= */
+import { PrimaryFlow } from '../PrimaryFlow';
+
+/* =======================
+   TESTS
+   ======================= */
+
+describe('PrimaryFlow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    // Mock SoftToken API
+    (window as any).SoftToken = {
+      generateChallengeResponseOTP: vi.fn(
+        (_success: any, _error: any, _payload: any) => {
+          _success({
+            sequenceNumber: 'SEQ123',
+            serialNumber: 'SERIAL123',
+            otp: 'OTP123',
+          });
+        }
+      ),
+    };
+  });
+
+  it('renders primary screen texts', () => {
+    render(<PrimaryFlow />);
+
+    expect(screen.getByText('primary.title')).toBeInTheDocument();
+    expect(screen.getByText('primary.subTitle')).toBeInTheDocument();
+    expect(screen.getByText('primary.description')).toBeInTheDocument();
+  });
+
+  it('continue button is disabled initially', () => {
+    render(<PrimaryFlow />);
+
+    const button = screen.getByRole('button');
+    expect(button).toBeDisabled();
+  });
+
+  it('enables continue button after entering 6-digit PIN', async () => {
+    render(<PrimaryFlow />);
+
+    const input = screen.getByTestId('pin-input');
+    const button = screen.getByRole('button');
+
+    await userEvent.type(input, '123456');
+
+    expect(button).toBeEnabled();
+  });
+
+  it('calls SoftToken API and sets validation object on continue click', async () => {
+    render(<PrimaryFlow />);
+
+    const input = screen.getByTestId('pin-input');
+    await userEvent.type(input, '123456');
+
+    const button = screen.getByRole('button');
+    await userEvent.click(button);
+
+    expect(mockSetPageLoading).toHaveBeenCalledWith(true);
+    expect((window as any).SoftToken.generateChallengeResponseOTP).toHaveBeenCalled();
+
+    expect(mockSetSTValidateObj).toHaveBeenCalledWith({
+      'tx-ref-num': 'TX123',
+      'challenge-otp': 'OTP123',
+      'random-num': 'RND123',
+      'token-serial-number': 'SERIAL123',
+      'sequence-number': 'SEQ123',
+    });
+  });
+
+  it('opens forgot PIN popup on click', async () => {
+    render(<PrimaryFlow />);
+
+    await userEvent.click(screen.getByText('primary.forgotPin'));
+
+    expect(screen.getByTestId('forgot-popup')).toBeInTheDocument();
+  });
+});
