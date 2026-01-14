@@ -1,0 +1,15 @@
+You are an expert software engineer and technical educator.
+Please provide a comprehensive walkthrough of this repository.
+Specifically:
+Explain the overall purpose and goals of the project in simple terms.
+Describe the high-level architecture and how the main components interact.
+Walk through the directory and file structure, explaining the role of each major folder and important files.
+Identify the entry points of the application and explain the execution flow step by step.
+Explain any core algorithms, business logic, or key design patterns used.
+Highlight important configuration files, environment variables, and build/setup steps.
+Describe how dependencies and external services are used.
+If applicable, explain the testing strategy, test structure, and how to run tests.
+Point out any non-obvious or tricky parts of the codebase and common pitfalls.
+Conclude with a quick-start guide for a new developer (how to run, debug, and extend the project).
+Assume the reader is new to this repository but has general programming knowledge.
+Use clear sections, concise explanations, and examples where helpful.
